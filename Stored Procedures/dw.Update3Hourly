@@ -24,6 +24,10 @@ BEGIN
     EXEC dw.UpdateDimProduct;
 	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
 
+    INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateDimFixedLocation', GETUTCDATE())
+    EXEC dw.UpdateDimFixedLocation;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
 	--EXEC dw.UpdateFactProductBatch
 	--EXEC dw.UpdateFactProductStock This has sproc is now executed after the 'BYOD Stock by location and batch' job has finished on Wellocks D365 
 
