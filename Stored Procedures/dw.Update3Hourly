@@ -1,0 +1,75 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+ALTER PROC [dw].[Update3Hourly] AS
+BEGIN
+
+    SET XACT_ABORT ON;
+    SET NOCOUNT ON;
+
+	--JF 21.05.2025 - Moved Fact Outbound Load Line to update first
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateFactOutboundLoadLine', GETUTCDATE())
+	EXEC dw.UpdateFactOutboundLoadLine;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateFactSales', GETUTCDATE())
+	EXEC dw.UpdateFactSales;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateDimProduct', GETUTCDATE())
+    EXEC dw.UpdateDimProduct;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	--EXEC dw.UpdateFactProductBatch
+	--EXEC dw.UpdateFactProductStock This has sproc is now executed after the 'BYOD Stock by location and batch' job has finished on Wellocks D365 
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateFactPurchaseOrder', GETUTCDATE())
+	EXEC dw.UpdateFactPurchaseOrder;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateFactStockAdjustment', GETUTCDATE())
+	EXEC dw.UpdateFactStockAdjustment;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateFactCredit', GETUTCDATE())
+    EXEC dw.UpdateFactCredit;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	--INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateFactOTIF', GETUTCDATE())
+    --EXEC dw.UpdateFactOTIF;
+	--UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateFactInventoryCounting', GETUTCDATE())
+	EXEC dw.UpdateFactInventoryCounting;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'dw.UpdateFactProductLocation', GETUTCDATE())
+	EXEC dw.UpdateFactProductLocation;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'edi.UpdateCreditHeader', GETUTCDATE())
+	EXEC edi.UpdateCreditHeader;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'edi.UpdateCreditLine', GETUTCDATE())
+	EXEC edi.UpdateCreditLine;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'edi.UpdateInvoiceHeader', GETUTCDATE())
+	EXEC edi.UpdateInvoiceHeader;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'edi.UpdateInvoiceLine', GETUTCDATE())
+	EXEC edi.UpdateInvoiceLine;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+	INSERT INTO dw.UpdateProcLog  (ParentSproc, SprocName, StartedUtc) VALUES ('dw.Update3Hourly', 'edi.UpdateSalesLine', GETUTCDATE())
+	EXEC edi.UpdateSalesLine;
+	UPDATE dw.UpdateProcLog SET EndedUtc = GETUTCDATE() WHERE RowID = (SELECT MAX(RowID) FROM dw.UpdateProcLog)
+
+END
+GO
