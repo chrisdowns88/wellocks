@@ -46,13 +46,13 @@ ALTER VIEW [ops].[PickfaceReplenStockStanding] AS
         ISNULL(os.WH2Bulk, 0) AS WH2Bulk,
         ISNULL(os.NonAvailableStock, 0) AS NonAvailableStock,
         CASE
-            WHEN p.[Default Aisle] IS NULL THEN 'nofixedloc'
+            WHEN fix.[Location] IS NULL THEN 'nofixedloc'
             WHEN pfs.NumAdditionZone2s > 1 THEN 'multizone2'
             WHEN pfs.PickfaceAdditionalZone2s NOT LIKE '%'+loc.SECONDADDITIONALWAREHOUSEZONEID+'%' THEN 'zone2mismatch'
             ELSE NULL
         END AS StockLocationWarningValue,
         CASE
-            WHEN p.[Default Aisle] IS NULL THEN 'No default location'
+            WHEN fix.[Location] IS NULL THEN 'No default location'
             WHEN pfs.NumAdditionZone2s > 1 THEN 'Stock in multiple night pick zones'
             WHEN pfs.PickfaceAdditionalZone2s NOT LIKE '%'+loc.SECONDADDITIONALWAREHOUSEZONEID+'%' THEN 'Stock in non-default night pick zone'
             ELSE NULL
