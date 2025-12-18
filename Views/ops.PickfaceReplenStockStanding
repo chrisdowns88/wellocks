@@ -34,7 +34,7 @@ ALTER VIEW [ops].[PickfaceReplenStockStanding] AS
         p.[Product Name] AS ProductName,
         p.[Product Master Category] AS MasterCategory,
         p.[Stock Unit] AS Unit,
-        ISNULL(p.[Default Aisle], 'No default location') AS DefaultLocation,
+        ISNULL(fix.[Location], 'No default location') AS DefaultLocation,
         ISNULL(loc.WAREHOUSEZONEID, 'No default zone') AS DefaultZone,
         ISNULL(loc.SECONDADDITIONALWAREHOUSEZONEID, 'No default additional zone 2') AS DefaultAdditionalZone2,
         p.[Lifecycle state] AS LifecycleState,
@@ -61,5 +61,6 @@ ALTER VIEW [ops].[PickfaceReplenStockStanding] AS
         dw.DimProduct AS p
         LEFT JOIN PickfaceStock AS pfs ON p.ProductNumber = pfs.ItemId
         LEFT JOIN OtherStock AS os ON p.ProductNumber = os.ItemId
-        LEFT JOIN dbo.WMSWarehouseLocationStaging AS loc ON p.[Default Aisle] = loc.WAREHOUSELOCATIONID
+        LEFT JOIN dw.DimFixedLocation as fix ON p.ProductNumber = fix.ItemNumber
+        LEFT JOIN dbo.WMSWarehouseLocationStaging AS loc ON fix.[Location] = loc.WAREHOUSELOCATIONID
 GO
