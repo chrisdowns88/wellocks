@@ -1,0 +1,79 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+ALTER VIEW [staging].[DimProduct] AS
+    WITH FirstLocation AS (
+        SELECT DISTINCT
+            ITEMNUMBER,
+            FIRST_VALUE(WAREHOUSEID) OVER (PARTITION BY ITEMNUMBER ORDER BY WAREHOUSEID, WAREHOUSELOCATIONID) AS WarehouseId,
+            FIRST_VALUE(WAREHOUSELOCATIONID) OVER (PARTITION BY ITEMNUMBER ORDER BY WAREHOUSEID, WAREHOUSELOCATIONID) AS WarehouseLocationId
+        FROM dbo.WHSFixedProductWarehouseLocationV2Staging
+    )
+	SELECT
+        p.PRODUCTNUMBER AS ProductNumber,
+        p.SEARCHNAME AS [Product Description],
+		c.PRODUCTNAME AS [Product Name],
+        CONCAT(p.PRODUCTNUMBER, ' - ', c.SEARCHNAME) AS [Product & Desc],
+        sc.CATEGORYNAME AS [Product Subcategory],
+        cat.CATEGORYNAME AS [Product Category],
+        mc.CATEGORYNAME AS [Product Master Category],
+		p.DEFAULTLEDGERDIMENSIONDISPLAYVALUE AS [Product Type],
+		p.PRODUCTGROUPID AS [Item Group],
+		p.COSTGROUPID AS [Cost Group],
+        p.BUYERGROUPID AS [Buyer Group],
+		p.INVENTORYUNITSYMBOL AS [Stock Unit],
+		p.SALESUNITSYMBOL AS [Sales Unit],
+		p.SALESPRICE / p.SALESPRICEQUANTITY AS [Sales Price],
+		p.BOMUNITSYMBOL AS [BOM Unit],
+        p.PURCHASEUNITSYMBOL AS [Purchase Unit],
+		p.PURCHASEPRICE / p.PURCHASEPRICEQUANTITY AS [Purchase Price],
+        p.PRIMARYVENDORACCOUNTNUMBER AS [Default Supplier Code],
+		--p.PURCHASEPRICE AS [Default Purchase Price],
+		w.WarehouseId AS [Default Warehouse],
+		w.WarehouseLocationId AS [Default Aisle],
+        p.PRODUCTLIFECYCLESTATEID AS [Lifecycle state],
+        CASE pl.PROCESSPOLICY
+            WHEN 0 THEN 'Yes'
+            WHEN 1 THEN 'No'
+            WHEN 2 THEN 'Warning'
+            ELSE 'Unknown'
+        END AS Purchaseable,
+        p.PRODUCTIONPOOLID AS [Production pool],
+		P.SHELFLIFEPERIODDAYS AS [Shelf Life],
+        att_sl.INTEGERVALUE AS [Minimum Shelf Life to Customer],
+		P.NETPRODUCTWEIGHT AS [Weight],
+        p.NETPRODUCTWEIGHT + p.TAREPRODUCTWEIGHT AS [WeightIncPackaging],
+        p.SALESSALESTAXITEMGROUPCODE AS [Sales VAT group code],
+		p.ITEMLONGDESCRIPTION AS [COS Description],
+		p.FOURTHPRODUCTFILTERCODE AS [Fourth Product Filter Code]
+    FROM
+        dbo.EcoResReleasedProductV2Staging AS p
+        INNER JOIN dbo.EcoResReleasedProductCreationV2Staging AS c ON c.PRODUCTNUMBER = p.PRODUCTNUMBER
+        LEFT JOIN dbo.EngChgProductLifecycleStateProcessStaging AS pl ON
+            p.PRODUCTLIFECYCLESTATEID = pl.PRODUCTLIFECYCLESTATEID
+            AND pl.PROCESSNAME = 'Purchase order'
+		LEFT JOIN FirstLocation AS w ON p.ITEMNUMBER = w.ITEMNUMBER
+        LEFT JOIN dbo.EcoResProductAttributeValueV3Staging AS att_sl ON
+            p.PRODUCTNUMBER = att_sl.PRODUCTNUMBER
+            AND att_sl.ATTRIBUTETYPENAME = 'W_Integer'
+            AND att_sl.DATATYPE = 4
+            AND att_sl.ATTRIBUTENAME = 'Minimum Shelf Life to Customer'
+        LEFT JOIN dbo.EcoResProductCategoryAssignmentStaging AS pca ON
+            p.PRODUCTNUMBER = pca.PRODUCTNUMBER
+            AND pca.PRODUCTCATEGORYHIERARCHYNAME = 'Product category hierarchy'
+        LEFT JOIN dbo.EcoResProductCategoryStaging AS sc ON
+            pca.PRODUCTCATEGORYNAME = sc.CATEGORYNAME
+            AND sc.PRODUCTCATEGORYHIERARCHYNAME = 'Product category hierarchy'
+        LEFT JOIN dbo.EcoResProductCategoryStaging AS cat ON
+            sc.PARENTPRODUCTCATEGORYCODE = cat.CATEGORYCODE
+            AND cat.PRODUCTCATEGORYHIERARCHYNAME = 'Product category hierarchy'
+        LEFT JOIN dbo.EcoResProductCategoryStaging AS mc ON
+            cat.PARENTPRODUCTCATEGORYCODE = mc.CATEGORYCODE
+            AND mc.PRODUCTCATEGORYHIERARCHYNAME = 'Product category hierarchy'
+GO
