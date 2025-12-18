@@ -1,0 +1,191 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROC [ops].[PickfaceReplenReport] (@anl_start date, @anl_end date, @anl_type char(3)) AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    --DECLARE @anl_start date = '2024-10-18', @anl_end date = '2024-10-19', @anl_type char(3) = 'max';
+    
+    WITH TransferOrder AS (
+        SELECT
+            t.ITEMNUMBER AS ItemNumber,
+            CAST(t.TRANSACTIONDATE AS date) AS AnlDate,
+            SUM(IIF(t.SOURCEWAREHOUSEID = 'Nelson', -1, 1) * t.INVENTORYQUANTITY * uom.Factor) AS TransferredQty
+        FROM
+            dbo.InventInventoryTransferJournalEntryStaging AS t
+            INNER JOIN dw.DimProduct AS p ON t.ITEMNUMBER = p.ProductNumber
+		    INNER JOIN dw.UtilItemUomConversion AS uom ON
+                t.ITEMNUMBER = uom.ItemNumber
+                AND p.[Stock Unit] = uom.FromUnit
+                AND uom.IsToInventoryUnit = 1
+        WHERE
+            t.JOURNALNAMEID = 'STK TFR'
+            AND
+                (
+                    (t.SOURCEWAREHOUSEID = 'Nelson' AND t.DESTINATIONWAREHOUSEID IN ('Nel-Prep', 'Nel-Pasta'))
+                    OR (t.SOURCEWAREHOUSEID IN ('Nel-Prep', 'Nel-Pasta') AND t.DESTINATIONWAREHOUSEID = 'Nelson')
+                )
+            AND CAST(t.TRANSACTIONDATE AS date) BETWEEN @anl_start AND @anl_end
+        GROUP BY
+            t.ITEMNUMBER,
+            CAST(t.TRANSACTIONDATE AS date)
+        UNION
+        SELECT
+            tl.ITEMNUMBER,
+            CAST(tl.REQUESTEDRECEIPTDATE AS date) AS AnlDate,
+            SUM(tl.SHIPPEDQUANTITY * uom.Factor) AS TransferredQty
+        FROM
+            dbo.InventTransferOrderHeaderStaging AS th
+            INNER JOIN dbo.InventTransferOrderLineStaging AS tl ON th.TRANSFERORDERNUMBER = tl.TRANSFERORDERNUMBER
+            INNER JOIN dw.DimProduct AS p ON tl.ITEMNUMBER = p.ProductNumber
+		    INNER JOIN dw.UtilItemUomConversion AS uom ON
+                tl.ITEMNUMBER = uom.ItemNumber
+                AND p.[Stock Unit] = uom.FromUnit
+                AND uom.IsToInventoryUnit = 1
+        WHERE
+            th.SHIPPINGWAREHOUSEID = 'Nelson'
+            AND th.RECEIVINGWAREHOUSEID IN ('Nel-Prep', 'Nel-Pasta')
+            AND th.TRANSITWAREHOUSEID = 'Nel-Tran'
+            AND tl.SHIPPEDQUANTITY <> 0
+            AND CAST(tl.REQUESTEDRECEIPTDATE AS date) BETWEEN @anl_start AND @anl_end
+        GROUP BY
+            tl.ITEMNUMBER,
+            CAST(tl.REQUESTEDRECEIPTDATE AS date)
+    ),
+    TransferOrderTotal AS (
+        SELECT
+            ItemNumber,
+            AnlDate,
+            SUM(TransferredQty) AS TransferredQty
+        FROM TransferOrder
+        GROUP BY
+            ItemNumber,
+            AnlDate
+    ),
+    SalesOrderTotal AS (
+		SELECT
+			so.ProductNumber,
+            so.[Requested Delivery Date] AS AnlDate,
+			SUM(so.[SO Qty] * uom.Factor) AS SoldQty
+		FROM
+            dw.FactSales AS so
+		    INNER JOIN dw.SalesOrderStatus AS sos ON so.SOLineStatus = sos.SalesStatusId
+		    INNER JOIN dw.DimProduct AS p ON so.ProductNumber = p.ProductNumber
+		    INNER JOIN dw.UtilItemUomConversion AS uom ON
+                so.ProductNumber = uom.ItemNumber
+                AND p.[Sales Unit] = uom.FromUnit
+                AND uom.IsToInventoryUnit = 1
+		WHERE
+            so.[Requested Delivery Date] BETWEEN @anl_start AND @anl_end 
+		    AND sos.SalesStatusId NOT IN (0,1)
+        GROUP BY
+            so.ProductNumber,
+            so.[Requested Delivery Date]
+    ),
+    AnlTotalByDay AS (
+        SELECT
+            COALESCE(s.ProductNumber, t.ItemNumber) AS ProductNumber,
+            COALESCE(s.AnlDate, t.AnlDate) AS AnlDate,
+            ISNULL(s.SoldQty, 0.) + ISNULL(t.TransferredQty, 0.) AS AnlQty
+        FROM
+            SalesOrderTotal AS s
+            FULL OUTER JOIN TransferOrderTotal AS t ON
+                s.ProductNumber = t.ItemNumber
+                AND s.AnlDate = t.AnlDate
+    ),
+    AnlDates AS (
+        SELECT COUNT(DISTINCT AnlDate) AS NumDistinctDates FROM AnlTotalByDay
+    ),
+    AnlTotal AS (
+        SELECT
+            a.ProductNumber,
+            SUM(a.AnlQty) AS AnlQty_Sum,
+            SUM(a.AnlQty) / MAX(d.NumDistinctDates) AS AnlQty_Avg,
+            MAX(a.AnlQty) AS AnlQty_Max
+        FROM
+            AnlTotalByDay AS a
+            CROSS JOIN AnlDates AS d
+        GROUP BY a.ProductNumber
+    ),
+    PurchaseOrder AS (
+        SELECT
+            po.ItemId AS ProductNumber,
+            SUM(po.PurchQty * uom.Factor) AS PoDueToday
+        FROM
+            ops.PickfaceReplenPurchaseOrder AS po
+		    INNER JOIN dw.UtilItemUomConversion AS uom ON
+                po.ItemId = uom.ItemNumber
+                AND po.PurchUnit = uom.FromUnit
+                AND uom.IsToInventoryUnit = 1
+        WHERE
+            (po.ConfirmedDeliveryDate = '1900-01-01' AND po.DeliveryDate = CAST(GETDATE() AS date))
+            OR po.ConfirmedDeliveryDate = CAST(GETDATE() AS date)
+        GROUP BY po.ItemId
+    ),
+    Combined AS (
+	    SELECT
+            s.ProductNumber,
+            CONCAT(s.ProductNumber, ' - ', s.ProductName, IIF(s.LifecycleState <> 'W60 Active', CONCAT(' [', s.LifecycleState, ']'), '')) AS ProductFull,
+            s.MasterCategory,
+            s.Unit,
+            s.DefaultLocation,
+            s.DefaultZone,
+            s.LifecycleState,
+            s.PickfaceLocations,
+            s.PickfaceZones,
+            s.StockLocationWarning,
+            s.StockLocationWarningValue,
+            CAST(s.PickfaceStock AS numeric(12, 1)) AS PickfaceStock,
+            CAST(s.WH1Bulk AS numeric(12, 1)) AS WH1Bulk,
+            CAST(s.WH2Bulk AS numeric(12, 1)) AS WH2Bulk,
+            CAST(s.NonAvailableStock AS numeric(12, 1)) AS NonAvailableStock,
+            CAST(ISNULL(po.PoDueToday, 0) AS numeric(12, 1)) AS PosDueToday,
+            CAST(CASE @anl_type
+                WHEN 'max' THEN ISNULL(a.AnlQty_Max, 0.)
+                WHEN 'avg' THEN ISNULL(a.AnlQty_Avg, 0.)
+                WHEN 'sum' THEN ISNULL(a.AnlQty_Sum, 0.)
+                ELSE ISNULL(a.AnlQty_Max, 0.)
+            END AS numeric(12, 1)) AS SalesDueAnl
+	    FROM
+            ops.PickfaceReplenStockStanding AS s
+            LEFT JOIN AnlTotal AS a ON s.ProductNumber = a.ProductNumber
+            LEFT JOIN PurchaseOrder AS po ON s.ProductNumber = po.ProductNumber
+        WHERE
+            s.LifecycleState = 'W60 Active'
+            OR a.AnlQty_Sum > 0
+    )
+    SELECT
+        c.ProductNumber,
+        c.ProductFull,
+        c.MasterCategory,
+        c.Unit,
+        c.DefaultLocation,
+        c.DefaultZone,
+        c.LifecycleState,
+        c.PickfaceLocations,
+        c.PickfaceZones,
+        c.PickfaceStock,
+        c.WH1Bulk,
+        c.WH2Bulk,
+        c.NonAvailableStock,
+        c.PosDueToday,
+        c.SalesDueAnl,
+        CAST(IIF(c.SalesDueAnl > 0, PickfaceStock * 100 / SalesDueAnl, 999999) AS numeric(12, 2)) AS CoverSort,
+        IIF(c.SalesDueAnl > 0, CAST(CAST(PickfaceStock * 100 / SalesDueAnl AS int) AS varchar) + '%', 'N/A') AS Cover,
+        CASE
+            WHEN c.SalesDueAnl <= 0 THEN 'default'
+            WHEN c.PickfaceStock / c.SalesDueAnl >= 1.5 THEN 'success'
+            WHEN c.PickfaceStock >= c.SalesDueAnl THEN 'palegreen'
+            WHEN (c.PickfaceStock + c.WH1Bulk + c.WH2Bulk) >= c.SalesDueAnl THEN 'warning'
+            WHEN (c.PickfaceStock + c.WH1Bulk + c.WH2Bulk + c.PosDueToday) >= c.SalesDueAnl THEN 'darkorange'
+            ELSE 'danger'
+        END AS CoverClass,
+        c.StockLocationWarning,
+        c.StockLocationWarningValue
+    FROM Combined AS c
+    ORDER BY c.ProductNumber
+END
+GO
