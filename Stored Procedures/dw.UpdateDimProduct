@@ -1,0 +1,122 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+ALTER PROC [dw].[UpdateDimProduct] AS
+BEGIN
+    SET XACT_ABORT ON;
+    SET NOCOUNT ON;
+
+    -- Check that source is not empty
+    IF (SELECT TOP(1) ProductNumber FROM staging.DimProduct) IS NULL BEGIN;
+        THROW 51000, 'Source data may be empty - not updating.', 1;
+    END;
+
+    BEGIN TRANSACTION;
+        UPDATE t
+        SET
+			t.[ProductNumber] = v.[ProductNumber],
+			t.[Product Description] = v.[Product Description],
+			t.[Product Name] = v.[Product Name],
+			t.[Product & Desc] = v.[Product & Desc],
+			t.[Product Subcategory] = v.[Product Subcategory],
+			t.[Product Category] = v.[Product Category],
+			t.[Product Master Category] = v.[Product Master Category],
+			t.[Product Type] = v.[Product Type],
+			t.[Item Group] = v.[Item Group],
+			t.[Cost Group] = v.[Cost Group],
+			t.[Buyer Group] = v.[Buyer Group],
+			t.[Stock Unit] = v.[Stock Unit],
+			t.[Sales Unit] = v.[Sales Unit],
+			t.[Sales Price] = v.[Sales Price],
+			t.[BOM Unit] = v.[BOM Unit],
+			t.[Purchase Unit] = v.[Purchase Unit],
+			t.[Purchase Price] = v.[Purchase Price],
+			t.[Default Supplier Code] = v.[Default Supplier Code],
+			t.[Default Warehouse] = v.[Default Warehouse],
+			t.[Default Aisle] = v.[Default Aisle],
+			t.[Lifecycle State] = v.[Lifecycle State],
+			t.[Purchaseable] = v.[Purchaseable],
+			t.[Production pool] = v.[Production pool],
+			t.[Shelf Life] = v.[Shelf Life],
+            t.[Minimum Shelf Life to Customer] = v.[Minimum Shelf Life to Customer],
+			t.[Weight] = v.[Weight],
+            t.[WeightIncPackaging] = v.[WeightIncPackaging],
+            t.[Sales VAT group code] = v.[Sales VAT group code],
+			t.UpdatedUtc = GETUTCDATE(),
+			t.[COS Description] = v.[COS Description],
+			t.[Fourth Product Filter Code] = v.[Fourth Product Filter Code]
+		FROM
+            dw.DimProduct AS t
+            INNER JOIN staging.DimProduct AS v ON t.[ProductNumber] = v.[ProductNumber];
+
+        INSERT INTO dw.DimProduct (
+			[ProductNumber],
+			[Product Description],
+			[Product Name],
+			[Product & Desc],
+			[Product Subcategory],
+			[Product Category],
+			[Product Master Category],
+			[Product Type],
+			[Item Group],
+			[Cost Group],
+			[Buyer Group],
+			[Stock Unit],
+			[Sales Unit],
+			[Sales Price],
+			[BOM Unit],
+			[Purchase Unit],
+			[Purchase Price],
+			[Default Supplier Code],
+			[Default Warehouse],
+			[Default Aisle],
+			[Lifecycle State],
+			[Purchaseable],
+			[Production pool],
+			[Shelf Life],
+            [Minimum Shelf Life to Customer],
+			[Weight],
+            [WeightIncPackaging],
+            [Sales VAT group code],
+			[COS Description],
+			[Fourth Product Filter Code]
+        )
+        SELECT
+			[ProductNumber],
+			[Product Description],
+			[Product Name],
+			[Product & Desc],
+			[Product Subcategory],
+			[Product Category],
+			[Product Master Category],
+			[Product Type],
+			[Item Group],
+			[Cost Group],
+			[Buyer Group],
+			[Stock Unit],
+			[Sales Unit],
+			[Sales Price],
+			[BOM Unit],
+			[Purchase Unit],
+			[Purchase Price],
+			[Default Supplier Code],
+			[Default Warehouse],
+			[Default Aisle],
+			[Lifecycle State],
+			[Purchaseable],
+			[Production pool],
+			[Shelf Life],
+            [Minimum Shelf Life to Customer],
+			[Weight],
+            [WeightIncPackaging],
+            [Sales VAT group code],
+			[COS Description],
+			[Fourth Product Filter Code]
+		FROM staging.DimProduct AS v
+        WHERE NOT EXISTS (SELECT 1 FROM dw.DimProduct WHERE [ProductNumber]= v.[ProductNumber]);
+    COMMIT TRANSACTION;            
+END
+GO
