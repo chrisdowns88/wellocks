@@ -8,13 +8,13 @@ GO
 
 
 ALTER VIEW [staging].[DimProduct] AS
-    WITH FirstLocation AS (
+    /*WITH FirstLocation AS (
         SELECT DISTINCT
             ITEMNUMBER,
             FIRST_VALUE(WAREHOUSEID) OVER (PARTITION BY ITEMNUMBER ORDER BY WAREHOUSEID, WAREHOUSELOCATIONID) AS WarehouseId,
             FIRST_VALUE(WAREHOUSELOCATIONID) OVER (PARTITION BY ITEMNUMBER ORDER BY WAREHOUSEID, WAREHOUSELOCATIONID) AS WarehouseLocationId
         FROM dbo.WHSFixedProductWarehouseLocationV2Staging
-    )
+    )*/ -- Removed by CD - 18/12/2025
 	SELECT
         p.PRODUCTNUMBER AS ProductNumber,
         p.SEARCHNAME AS [Product Description],
@@ -35,8 +35,8 @@ ALTER VIEW [staging].[DimProduct] AS
 		p.PURCHASEPRICE / p.PURCHASEPRICEQUANTITY AS [Purchase Price],
         p.PRIMARYVENDORACCOUNTNUMBER AS [Default Supplier Code],
 		--p.PURCHASEPRICE AS [Default Purchase Price],
-		w.WarehouseId AS [Default Warehouse],
-		w.WarehouseLocationId AS [Default Aisle],
+		--w.WarehouseId AS [Default Warehouse],
+		--w.WarehouseLocationId AS [Default Aisle],
         p.PRODUCTLIFECYCLESTATEID AS [Lifecycle state],
         CASE pl.PROCESSPOLICY
             WHEN 0 THEN 'Yes'
@@ -58,7 +58,7 @@ ALTER VIEW [staging].[DimProduct] AS
         LEFT JOIN dbo.EngChgProductLifecycleStateProcessStaging AS pl ON
             p.PRODUCTLIFECYCLESTATEID = pl.PRODUCTLIFECYCLESTATEID
             AND pl.PROCESSNAME = 'Purchase order'
-		LEFT JOIN FirstLocation AS w ON p.ITEMNUMBER = w.ITEMNUMBER
+		--LEFT JOIN FirstLocation AS w ON p.ITEMNUMBER = w.ITEMNUMBER
         LEFT JOIN dbo.EcoResProductAttributeValueV3Staging AS att_sl ON
             p.PRODUCTNUMBER = att_sl.PRODUCTNUMBER
             AND att_sl.ATTRIBUTETYPENAME = 'W_Integer'
