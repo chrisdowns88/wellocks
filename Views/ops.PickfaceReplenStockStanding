@@ -1,0 +1,65 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER VIEW [ops].[PickfaceReplenStockStanding] AS
+    WITH PickfaceStock AS (
+        SELECT
+            ItemId,
+            STRING_AGG(wMSLocationId, ', ') WITHIN GROUP (ORDER BY wMSLocationId) AS PickfaceLocations,
+            STRING_AGG(ZoneId, ', ') AS PickfaceZones,
+            STRING_AGG(AdditionalZone2, ', ') AS PickfaceAdditionalZone2s,
+            COUNT(DISTINCT AdditionalZone2) AS NumAdditionZone2s,
+            SUM(PhysicalInvent) AS PickfaceStock
+        FROM ops.PickfaceReplenStock
+        WHERE
+            InventStatusId = 'Available'
+            AND InventSiteId = 'Nelson'
+            AND InventLocationId = 'Nelson'
+            AND LocType = 'PICK'
+        GROUP BY ItemId
+    ),
+    OtherStock AS (
+        SELECT
+            ItemId,
+            SUM(IIF(ZoneId LIKE '%WH1%' AND LocType IN ('BULK', 'INBOUND') AND InventStatusId = 'Available', PhysicalInvent, 0)) AS WH1Bulk,
+            SUM(IIF(ZoneId LIKE '%WH2%' AND LocType IN ('BULK', 'INBOUND') AND InventStatusId = 'Available', PhysicalInvent, 0)) AS WH2Bulk,
+            SUM(IIF(InventStatusId <> 'Available', PhysicalInvent, 0)) AS NonAvailableStock
+        FROM ops.PickfaceReplenStock
+        GROUP BY ItemId
+    )
+    SELECT
+        p.ProductNumber,
+        p.[Product Name] AS ProductName,
+        p.[Product Master Category] AS MasterCategory,
+        p.[Stock Unit] AS Unit,
+        ISNULL(p.[Default Aisle], 'No default location') AS DefaultLocation,
+        ISNULL(loc.WAREHOUSEZONEID, 'No default zone') AS DefaultZone,
+        ISNULL(loc.SECONDADDITIONALWAREHOUSEZONEID, 'No default additional zone 2') AS DefaultAdditionalZone2,
+        p.[Lifecycle state] AS LifecycleState,
+        ISNULL(pfs.PickfaceLocations, 'N/A') AS PickfaceLocations,
+        ISNULL(pfs.PickfaceZones, 'N/A') AS PickfaceZones,
+        ISNULL(pfs.PickfaceAdditionalZone2s, 'N/A') AS PickfaceAdditionalZone2s,
+        ISNULL(pfs.PickfaceStock, 0) AS PickfaceStock,
+        ISNULL(os.WH1Bulk, 0) AS WH1Bulk,
+        ISNULL(os.WH2Bulk, 0) AS WH2Bulk,
+        ISNULL(os.NonAvailableStock, 0) AS NonAvailableStock,
+        CASE
+            WHEN p.[Default Aisle] IS NULL THEN 'nofixedloc'
+            WHEN pfs.NumAdditionZone2s > 1 THEN 'multizone2'
+            WHEN pfs.PickfaceAdditionalZone2s NOT LIKE '%'+loc.SECONDADDITIONALWAREHOUSEZONEID+'%' THEN 'zone2mismatch'
+            ELSE NULL
+        END AS StockLocationWarningValue,
+        CASE
+            WHEN p.[Default Aisle] IS NULL THEN 'No default location'
+            WHEN pfs.NumAdditionZone2s > 1 THEN 'Stock in multiple night pick zones'
+            WHEN pfs.PickfaceAdditionalZone2s NOT LIKE '%'+loc.SECONDADDITIONALWAREHOUSEZONEID+'%' THEN 'Stock in non-default night pick zone'
+            ELSE NULL
+        END AS StockLocationWarning
+    FROM
+        dw.DimProduct AS p
+        LEFT JOIN PickfaceStock AS pfs ON p.ProductNumber = pfs.ItemId
+        LEFT JOIN OtherStock AS os ON p.ProductNumber = os.ItemId
+        LEFT JOIN dbo.WMSWarehouseLocationStaging AS loc ON p.[Default Aisle] = loc.WAREHOUSELOCATIONID
+GO
